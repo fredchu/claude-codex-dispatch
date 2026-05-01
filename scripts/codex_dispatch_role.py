@@ -18,7 +18,7 @@ from typing import Any
 
 VALID_MODES = {"worker", "verifier", "reviewer", "synthesizer"}
 READ_ONLY_MODES = {"verifier", "reviewer", "synthesizer"}
-DEFAULT_IGNORE_STATUS_PREFIXES = [".tmp.driveupload/"]
+DEFAULT_IGNORE_STATUS_PREFIXES = [".tmp.driveupload/", ".codex-dispatch/"]
 
 
 def run(cmd: list[str], cwd: Path, check: bool = False) -> subprocess.CompletedProcess[str]:
