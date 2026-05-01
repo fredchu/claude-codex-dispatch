@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dispatch Codex CLI with Pro CC role contracts."""
+"""Dispatch Codex CLI with structured role contracts from an orchestrator."""
 
 from __future__ import annotations
 
@@ -208,7 +208,7 @@ def build_prompt(fields: dict[str, Any], task_text: str) -> str:
     schema_note = """Return final output as JSON matching the provided schema.
 Use concise strings. Include command evidence under verification_run and evidence."""
 
-    return f"""You are OpenAI Codex running as a Pro CC delegated {mode}.
+    return f"""You are OpenAI Codex running as an orchestrator-delegated {mode}.
 
 ROLE POLICY:
 {role_policy}
@@ -378,7 +378,7 @@ def main() -> int:
         if scoped_dirty:
             policy["policy_violation"] = True
             policy["messages"].append(
-                "BLOCKED: write scope overlaps existing dirty files. Re-run with --allow-dirty-overlap only if Pro CC accepts this."
+                "BLOCKED: write scope overlaps existing dirty files. Re-run with --allow-dirty-overlap only if the orchestrator accepts this risk."
             )
             policy["dirty_overlap"] = scoped_dirty
             write_text(run_dir / "policy.json", json.dumps(policy, ensure_ascii=False, indent=2))

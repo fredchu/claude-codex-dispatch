@@ -2,7 +2,7 @@
 name: codex-dispatch
 description: >
   Dispatch OpenAI Codex CLI directly from Claude Code with a structured role
-  contract. Use when Pro CC needs Codex to act as worker, verifier, reviewer,
+  contract. Use when Claude Code needs Codex to act as worker, verifier, reviewer,
   or synthesizer through codex exec, with write-scope checks, run artifacts,
   and structured result output. Always uses Codex CLI directly, not a Claude
   subagent wrapper.
@@ -18,14 +18,14 @@ allowed-tools:
 # Codex Dispatch
 
 Use this skill to call OpenAI Codex CLI directly from Claude Code while preserving
-Pro CC's role boundaries and verification discipline.
+the orchestrator's role boundaries and verification discipline.
 
 ## Core Rule
 
 All dispatches must go through:
 
 ```bash
-python3 ~/.claude/skills/codex-dispatch/scripts/codex_dispatch_role.py --task <task-file>
+~/.claude/skills/claude-codex-dispatch/bin/codex-dispatch --task <task-file>
 ```
 
 The script always calls `codex exec` with:
@@ -35,7 +35,7 @@ The script always calls `codex exec` with:
 ```
 
 Safety therefore comes from the task packet, wrapper checks, git status snapshots,
-write-scope validation, and Pro CC review of the result artifacts.
+write-scope validation, and orchestrator review of the result artifacts.
 
 ## Modes
 
@@ -57,8 +57,8 @@ Create a task packet Markdown file. Use this minimum shape:
 
 ```markdown
 MODE: verifier
-WORKDIR: /Users/fredchu/Documents/For_Claude
-OBJECTIVE: Verify that qmd search and embeddings work.
+WORKDIR: /path/to/your/project
+OBJECTIVE: Verify that the targeted test and build checks work.
 
 WRITE SCOPE:
 - none
@@ -68,8 +68,8 @@ NON-GOALS:
 - Do not install packages.
 
 VERIFICATION:
-- qmd status
-- qmd search "Mini CC" --json -n 3
+- pytest tests/ -v
+- pytest tests/ -k "specific_test" -v
 
 DELIVERABLE:
 - Return whether the claim is supported and cite command evidence.
@@ -80,7 +80,7 @@ For full field guidance, read `references/task-packet.md`.
 ## Run
 
 ```bash
-python3 ~/.claude/skills/codex-dispatch/scripts/codex_dispatch_role.py \
+~/.claude/skills/claude-codex-dispatch/bin/codex-dispatch \
   --task /path/to/task.md
 ```
 
@@ -120,4 +120,4 @@ continuing.
 
 - Task packet format: `references/task-packet.md`
 - Mode policy: `references/mode-policy.md`
-- Pro CC integration notes: `references/pro-cc-integration.md`
+- Orchestrator integration notes: `references/orchestrator-integration.md`

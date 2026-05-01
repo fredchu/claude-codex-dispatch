@@ -1,17 +1,19 @@
 MODE: worker
-WORKDIR: /path/to/repo
-OBJECTIVE: Implement a bounded deterministic change.
+WORKDIR: /path/to/your/project
+OBJECTIVE: Add a unit test for the helper function `slugify(text)` in `src/utils.py`.
 
 WRITE SCOPE:
-- scripts/example.py
-- tests/test_example.py
+- tests/test_utils.py
 
 NON-GOALS:
-- Do not refactor unrelated modules.
-- Do not change project configuration.
+- Do not modify src/utils.py.
+- Do not add new dependencies to requirements.txt.
+- Do not change pytest configuration.
 
 VERIFICATION:
-- pytest tests/test_example.py
+- pytest tests/test_utils.py -v
 
 DELIVERABLE:
-- Return changed files, verification output, remaining risks, and next step.
+- New test file `tests/test_utils.py` containing at least three assertions:
+  one happy-path case, one whitespace-collapsing case, one unicode case.
+- Output of pytest showing all three assertions pass.

@@ -15,7 +15,7 @@ Required fields:
 Recommended fields:
 
 - `CONTEXT`: confirmed facts and relevant file paths
-- `ALLOW DIRTY OVERLAP`: use `true` only when Pro CC accepts that Codex may touch already-dirty scoped files
+- `ALLOW DIRTY OVERLAP`: use `true` only when the orchestrator accepts that Codex may touch already-dirty scoped files
 
 Use absolute paths in `WORKDIR`. Use repo-relative paths in `WRITE SCOPE`.
 
