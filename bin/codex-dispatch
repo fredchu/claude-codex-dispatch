@@ -1,0 +1,20 @@
+#!/usr/bin/env sh
+# claude-codex-dispatch POSIX launcher
+# Resolves python interpreter and forwards args to codex_dispatch_role.py
+
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+WRAPPER="$SCRIPT_DIR/scripts/codex_dispatch_role.py"
+
+if [ ! -f "$WRAPPER" ]; then
+  echo "Error: wrapper not found at $WRAPPER" >&2
+  exit 1
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+  exec python3 "$WRAPPER" "$@"
+elif command -v python >/dev/null 2>&1; then
+  exec python "$WRAPPER" "$@"
+else
+  echo "Error: python3 (or python) required but not found in PATH." >&2
+  exit 1
+fi
