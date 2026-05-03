@@ -49,15 +49,24 @@ def parse_packet(text: str) -> dict[str, Any]:
     current: str | None = None
     sections: dict[str, list[str]] = {}
 
-    header_re = re.compile(r"^([A-Z][A-Z0-9 _-]*):\s*(.*)$")
+    # Header forms accepted:
+    #   KEY: value
+    #   KEY (parenthetical comment): value-or-empty
+    #   KEY:  (line continues with bullet lines below)
+    # The optional `(comment)` after the key is dropped — without this, headers
+    # like "WRITE SCOPE (bare absolute paths only):" failed to match at all,
+    # silently dropping the bulleted paths that followed.
+    header_re = re.compile(r"^([A-Z][A-Z0-9 _-]*?)(\s*\([^)]*\))?:\s*(.*)$")
     for raw in text.splitlines():
         line = raw.rstrip()
         match = header_re.match(line)
         if match:
             key = match.group(1).strip().upper().replace(" ", "_")
-            value = match.group(2).strip()
+            value = match.group(3).strip()
             current = key
-            if value:
+            # If header value itself is a parenthetical (e.g. "KEY: (note)"),
+            # treat as empty and keep accumulating bullets.
+            if value and not value.startswith("("):
                 fields[key] = value
             else:
                 sections.setdefault(key, [])
@@ -65,13 +74,17 @@ def parse_packet(text: str) -> dict[str, Any]:
         if current and current not in fields:
             sections.setdefault(current, []).append(line)
 
+    annotation_re = re.compile(r"\s*\(\s*(NEW|MODIFY|DELETE|MOVE|MOVED|RENAMED|OPTIONAL)[^)]*\)\s*$", re.IGNORECASE)
     for key, lines in sections.items():
         cleaned = [line.strip() for line in lines if line.strip()]
         values = []
         for line in cleaned:
             if line.startswith("- "):
-                values.append(line[2:].strip())
-            else:
+                line = line[2:].strip()
+            # Strip trailing annotations like "(NEW)" / "(MODIFY)" / "(NEW, optional)"
+            # so the path matches what git status reports.
+            line = annotation_re.sub("", line).strip()
+            if line:
                 values.append(line)
         fields[key] = values
 
@@ -311,6 +324,29 @@ def main() -> int:
         help="Git status path prefix to ignore for policy checks. Can be repeated.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Build artifacts without calling Codex.")
+    parser.add_argument(
+        "--timeout-sec",
+        type=int,
+        default=int(os.environ.get("CODEX_DISPATCH_TIMEOUT_SEC", "1800")),
+        help="Hard wall-clock timeout (seconds) for the codex subprocess. Default: 1800.",
+    )
+    parser.add_argument(
+        "--heartbeat-sec",
+        type=int,
+        default=int(os.environ.get("CODEX_DISPATCH_HEARTBEAT_SEC", "300")),
+        help="Kill codex if events.jsonl has not grown for this many seconds. Default: 300.",
+    )
+    parser.add_argument(
+        "--quota-gate",
+        type=int,
+        default=int(os.environ.get("CODEX_DISPATCH_QUOTA_GATE", "85")),
+        help="Refuse to dispatch when Codex 5h primary_window.used_percent >= this. Default: 85.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Bypass quota-gate refusal.",
+    )
     args = parser.parse_args()
 
     task_path = Path(args.task).expanduser().resolve()
@@ -329,6 +365,36 @@ def main() -> int:
         raise SystemExit(f"ERROR: WORKDIR is not inside a git repo: {workdir}")
     if shutil.which("codex") is None and not args.dry_run:
         raise SystemExit("ERROR: codex CLI not found on PATH")
+
+    # Quota gate: refuse to dispatch when 5h window is near exhaustion.
+    # Reads ~/.codex/auth.json and queries chatgpt.com/backend-api/wham/usage.
+    # Failures are non-fatal — proceed if the gate cannot be checked.
+    if not args.dry_run and args.quota_gate > 0 and not args.force:
+        try:
+            import json as _json
+            import urllib.request as _ur
+            from pathlib import Path as _P
+            auth = _P(os.environ.get("CODEX_HOME", _P.home() / ".codex")) / "auth.json"
+            token = _json.loads(auth.read_text())["tokens"]["access_token"]
+            req = _ur.Request(
+                "https://chatgpt.com/backend-api/wham/usage",
+                headers={"Authorization": f"Bearer {token}", "User-Agent": "codex-dispatch/0.1.1"},
+            )
+            with _ur.urlopen(req, timeout=5) as resp:
+                usage = _json.loads(resp.read())
+            primary = (usage.get("rate_limit") or {}).get("primary_window") or {}
+            used = int(primary.get("used_percent", 0))
+            reset_after = int(primary.get("reset_after_seconds", 0))
+            if used >= args.quota_gate:
+                hrs, mins = divmod(reset_after // 60, 60)
+                raise SystemExit(
+                    f"ERROR: Codex 5h window at {used}% (>= {args.quota_gate}% gate); "
+                    f"reset in {hrs}h {mins:02d}m. Use --force to override."
+                )
+        except SystemExit:
+            raise
+        except Exception as exc:
+            print(f"WARN: quota gate check skipped: {exc}", flush=True)
 
     timestamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     run_id = f"{timestamp}-{mode}-{safe_slug(objective)}"
@@ -412,19 +478,69 @@ def main() -> int:
             str(result_json),
             prompt,
         ]
-        proc = subprocess.run(
-            cmd,
-            cwd=str(workdir),
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        write_text(events_jsonl, proc.stdout)
-        write_text(stderr_path, proc.stderr)
-        policy["codex_exit_code"] = proc.returncode
-        if proc.returncode != 0:
+        # Stream stdout to events.jsonl while a watchdog kills the codex
+        # subprocess on hard timeout or when stdout has not grown for
+        # heartbeat-sec. Hangs (40min idle, observed 2x in 2026-05-02/03
+        # dogfood) used to silently consume token budget; now they fail fast.
+        events_jsonl.parent.mkdir(parents=True, exist_ok=True)
+        timed_out_reason: str | None = None
+        with events_jsonl.open("w", encoding="utf-8") as events_fh:
+            popen = subprocess.Popen(
+                cmd,
+                cwd=str(workdir),
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=1,
+            )
+            import threading
+            import time as _time
+            stderr_buf: list[str] = []
+            last_output_at = [_time.time()]
+
+            def pump_stdout() -> None:
+                assert popen.stdout is not None
+                for line in popen.stdout:
+                    events_fh.write(line)
+                    events_fh.flush()
+                    last_output_at[0] = _time.time()
+
+            def pump_stderr() -> None:
+                assert popen.stderr is not None
+                for line in popen.stderr:
+                    stderr_buf.append(line)
+
+            t_out = threading.Thread(target=pump_stdout, daemon=True)
+            t_err = threading.Thread(target=pump_stderr, daemon=True)
+            t_out.start()
+            t_err.start()
+
+            start = _time.time()
+            while popen.poll() is None:
+                _time.sleep(2)
+                now = _time.time()
+                if args.timeout_sec > 0 and (now - start) > args.timeout_sec:
+                    timed_out_reason = f"hard timeout ({args.timeout_sec}s)"
+                    popen.kill()
+                    break
+                if args.heartbeat_sec > 0 and (now - last_output_at[0]) > args.heartbeat_sec:
+                    timed_out_reason = f"heartbeat stall ({args.heartbeat_sec}s without stdout)"
+                    popen.kill()
+                    break
+
+            popen.wait()
+            t_out.join(timeout=5)
+            t_err.join(timeout=5)
+        write_text(stderr_path, "".join(stderr_buf))
+        policy["codex_exit_code"] = popen.returncode
+        if timed_out_reason:
             policy["policy_violation"] = True
-            policy["messages"].append(f"Codex exited non-zero: {proc.returncode}")
+            policy["messages"].append(f"Codex killed by watchdog: {timed_out_reason}")
+            policy["watchdog_killed"] = True
+            policy["watchdog_reason"] = timed_out_reason
+        elif popen.returncode != 0:
+            policy["policy_violation"] = True
+            policy["messages"].append(f"Codex exited non-zero: {popen.returncode}")
 
     post_status = git_status(workdir)
     post_policy_status = filter_status(post_status, args.ignore_status_prefix)
