@@ -5,6 +5,33 @@
 格式基於 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)，
 並遵循 [語意化版本（Semantic Versioning）](https://semver.org/lang/zh-TW/)。
 
+## [0.1.1] — 2026-05-03
+
+### 修正
+- **Watchdog 逾時與心跳**：codex 子進程在硬性 wall-clock 超時（`--timeout-sec`，
+  預設 1800）或 stdout 連續沒輸出超過 `--heartbeat-sec`（預設 300）時會被殺。
+  v0.1.0 dogfood 兩次撞到 codex 卡 40 分鐘無輸出（疑 ChatGPT stream 卡 retry），
+  舊版 wrapper 默默燒 token；現在會 fail fast，並把 `watchdog_killed: true`
+  寫進 `policy.json`。可用 `CODEX_DISPATCH_TIMEOUT_SEC` /
+  `CODEX_DISPATCH_HEARTBEAT_SEC` 環境變數覆蓋。
+- **WRITE SCOPE parser false positive 兩種**：
+  - 標題附帶括號註解（`WRITE SCOPE (bare paths only):`）讓 regex match 失敗，
+    後面 bullet 條列被默默丟掉 → `write_scope=[]` → 每個改動誤判為 out-of-scope。
+  - 條列項末尾註解（`/path/foo.py (NEW)`、`(MODIFY)`、`(NEW, optional)`）沒被
+    剝除，比對時 `/path/foo.py (NEW)` 跟 `git status` 回的純路徑永遠不 match。
+    現在兩種寫法都接受，註解自動剝掉。
+
+### 新增
+- **配額守門 (Quota gate)**：當 Codex 5 小時 window `used_percent` 超過
+  `--quota-gate`（預設 85）時拒絕派工。讀 `~/.codex/auth.json` OAuth token
+  並打 `https://chatgpt.com/backend-api/wham/usage`。`--force` 強制覆蓋。
+  網路/認證失敗優雅跳過。
+
+### 備註
+- 純擴充式重構 `codex_dispatch_role.py`；既有 task packet 不需修改。
+- Watchdog 改用 `subprocess.Popen` + threaded pump；events 即時寫進
+  `events.jsonl`（先前是 codex 結束才一次寫入）。
+
 ## [0.1.0] — 2026-05-XX
 
 ### 新增
