@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Watchdog uses `subprocess.Popen` + threaded stdout/stderr pumps; events
   stream to `events.jsonl` in real time (previously buffered until exit).
 
-## [0.1.0] — 2026-05-XX
+## [0.1.0] — 2026-05-02
 
 ### Added
 - Initial public release.
@@ -55,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Requirements
 - Claude Code (latest)
-- OpenAI Codex CLI (≥ TBD-on-release-day)
+- OpenAI Codex CLI
 - Python 3.9+
 - macOS / Linux / Windows (native PowerShell or WSL)
 

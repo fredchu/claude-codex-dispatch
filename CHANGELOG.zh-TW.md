@@ -32,7 +32,7 @@
 - Watchdog 改用 `subprocess.Popen` + threaded pump；events 即時寫進
   `events.jsonl`（先前是 codex 結束才一次寫入）。
 
-## [0.1.0] — 2026-05-XX
+## [0.1.0] — 2026-05-02
 
 ### 新增
 - 首次公開發布。
@@ -50,7 +50,7 @@
 
 ### 系統需求
 - Claude Code（最新版）
-- OpenAI Codex CLI (≥ TBD-on-release-day)
+- OpenAI Codex CLI
 - Python 3.9+
 - macOS / Linux / Windows（原生 PowerShell 或 WSL）
 
@@ -58,4 +58,5 @@
 - Windows 支援：experimental（實驗性）。在 macOS 上驗證過；歡迎社群回報 Windows 使用情形。
 - 沒有自動化測試套件（`examples/` 充當 smoke test）。
 
+[0.1.1]: https://github.com/fredchu/claude-codex-dispatch/releases/tag/v0.1.1
 [0.1.0]: https://github.com/fredchu/claude-codex-dispatch/releases/tag/v0.1.0

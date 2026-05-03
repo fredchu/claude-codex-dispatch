@@ -199,11 +199,19 @@ This skill explicitly assumes: **you read the results and never accept Codex's o
 ## Requirements
 
 - Claude Code (latest version)
-- OpenAI Codex CLI (≥ TBD-on-release-day) — version pinned at release
+- OpenAI Codex CLI (use the version you already have — no version pin)
 - Python 3.9+
 - macOS / Linux / Windows (native PowerShell or WSL)
 
 > **Note:** Windows support is experimental.
+
+## Operational Safeguards
+
+The wrapper guards against the failure modes seen in real dispatch runs:
+
+- **Watchdog** — kills the Codex subprocess on hard wall-clock timeout (`--timeout-sec`, default 1800 s) or when stdout has been silent for longer than `--heartbeat-sec` (default 300 s). Idle hangs (suspected ChatGPT stream stalls) used to silently consume token budget; the wrapper now fails fast and records `watchdog_killed: true` in `policy.json`.
+- **Quota gate** — refuses to dispatch when the Codex 5-hour primary window `used_percent` is at or above `--quota-gate` (default 85). Reads `~/.codex/auth.json` and queries the same usage endpoint codexbar uses. Pass `--force` to override; skips gracefully on network or auth error.
+- **Streaming events** — `events.jsonl` is written line-by-line during the run, so you can `tail -f` an active dispatch instead of waiting for the subprocess to exit.
 
 ## Configuration
 
@@ -215,12 +223,18 @@ This skill explicitly assumes: **you read the results and never accept Codex's o
 | `--output-dir <dir>` | Override default run artifact directory (`<workdir>/.codex-dispatch/runs`) |
 | `--allow-dirty-overlap` | Allow worker mode to touch already-dirty scoped files |
 | `--dry-run` | Build prompt and artifacts without calling Codex |
+| `--timeout-sec <n>` | Hard wall-clock timeout in seconds (default 1800) |
+| `--heartbeat-sec <n>` | Kill if stdout silent longer than this in seconds (default 300) |
+| `--quota-gate <pct>` | Refuse dispatch when 5h Codex usage ≥ this percent (default 85) |
+| `--force` | Override the quota gate |
 
 ### Environment variables
 
 | Variable | Description |
 |---|---|
 | `$CLAUDE_SKILLS_DIR` | Override the skills directory used by the installer |
+| `$CODEX_DISPATCH_TIMEOUT_SEC` | Default value for `--timeout-sec` |
+| `$CODEX_DISPATCH_HEARTBEAT_SEC` | Default value for `--heartbeat-sec` |
 
 ## FAQ
 
